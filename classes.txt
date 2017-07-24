@@ -1,0 +1,16 @@
+cucumber
+radish
+tomato
+potato
+pumpkin
+zucchini
+cabbage
+carrot
+salad
+broccoli
+bell pepper
+apple
+lemon
+banana
+orange
+mushroom
