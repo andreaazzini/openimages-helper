@@ -1,10 +1,11 @@
+from PIL import Image
 import csv
 import os
 import urllib
 
 BASE_DIR = os.path.join('/', 'datasets', 'OpenImages')
 OPEN_IMAGES_DIR = os.path.join(BASE_DIR, '2017_07')
-download_enabled = True
+download_enabled = False
 trainval_enabled = True
 
 def get_label_name(label_description):
@@ -31,7 +32,7 @@ def get_images_with_annotations(dataset_partition, label_names):
             label_name = row['LabelName']
             if label_name in label_names:
                 image_id = row['ImageID']
-                bbox = (row['XMin'], row['XMax'], row['YMin'], row['YMax'])
+                bbox = (float(row['XMin']), float(row['XMax']), float(row['YMin']), float(row['YMax']))
                 if image_id in images:
                     if label_name in images[image_id]:
                         images[image_id][label_name].append(bbox)
@@ -79,26 +80,38 @@ def write_image_sets(dataset_partition, images):
         for image in images:
             f.write('%s\n' % image)
 
-def write_annotations(images, format='voc'):
+def write_annotations(images, label_dict):
     import xml.etree.cElementTree as ET
 
     annotations_dir = os.path.join(BASE_DIR, 'VOCify', 'Annotations')
     if not os.path.exists(annotations_dir):
         os.makedirs(annotations_dir)
+    image_dir = os.path.join(BASE_DIR, 'VOCify', 'JPEGImages')
 
     for image in images:
+        image_filename = '%s.jpg' % image
+        try:
+            img = Image.open(os.path.join(image_dir, image_filename))
+            width, height = img.size
+            width -= 1
+            height -= 1
+            img.close()
+        except IOError:
+            print('Skipped image %s' % image_filename)
+            continue
+
         annotation = ET.Element('annotation')
-        ET.SubElement(annotation, 'filename').text = '%s.jpg' % image
+        ET.SubElement(annotation, 'filename').text = image_filename
         ET.SubElement(annotation, 'folder').text = '2017_07'
         for label in images[image]:
             for xmin, xmax, ymin, ymax in images[image][label]:
                 obj = ET.SubElement(annotation, 'object')
-                ET.SubElement(obj, 'name').text = label
+                ET.SubElement(obj, 'name').text = label_dict[label].lower()
                 bndbox = ET.SubElement(obj, 'bndbox')
-                ET.SubElement(bndbox, 'xmin').text = xmin
-                ET.SubElement(bndbox, 'xmax').text = xmax
-                ET.SubElement(bndbox, 'ymin').text = ymin
-                ET.SubElement(bndbox, 'ymax').text = ymax
+                ET.SubElement(bndbox, 'xmin').text = str(int(round(xmin * width)))
+                ET.SubElement(bndbox, 'xmax').text = str(int(round(xmax * width)))
+                ET.SubElement(bndbox, 'ymin').text = str(int(round(ymin * height)))
+                ET.SubElement(bndbox, 'ymax').text = str(int(round(ymax * height)))
 
         annotation_path = os.path.join(annotations_dir, '%s.xml' % image)
         tree = ET.ElementTree(annotation)
@@ -116,7 +129,7 @@ if __name__ == '__main__':
             download_images(dataset_partition, dataset[dataset_partition].keys())
         write_image_sets(dataset_partition, dataset[dataset_partition].keys())
         print('Writing annotations for the %s images...' % dataset_partition)
-        write_annotations(dataset[dataset_partition])
+        write_annotations(dataset[dataset_partition], label_dict)
 
     if trainval_enabled:
         print("Trainval enabled, writing trainval.txt...")
