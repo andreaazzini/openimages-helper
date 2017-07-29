@@ -7,6 +7,7 @@ BASE_DIR = os.path.join('/', 'datasets', 'OpenImages')
 OPEN_IMAGES_DIR = os.path.join(BASE_DIR, '2017_07')
 download_enabled = False
 trainval_enabled = True
+hflip_enabled = True
 
 def get_label_name(label_description):
     class_description_filename = os.path.join(OPEN_IMAGES_DIR, 'class-descriptions.csv')
@@ -70,7 +71,7 @@ def download_images(dataset_partition, image_ids):
                 print('Getting %s, storing in %s' % (image_url, image_path))
                 urllib.urlretrieve(image_url, image_path)
 
-def write_image_sets(dataset_partition, images):
+def write_image_sets(dataset_partition, images, hflip=False):
     image_sets_dir = os.path.join(BASE_DIR, 'VOCify', 'ImageSets', 'Main')
     if not os.path.exists(image_sets_dir):
         os.makedirs(image_sets_dir)
@@ -79,8 +80,10 @@ def write_image_sets(dataset_partition, images):
     with open(image_set_path, 'w') as f:
         for image in images:
             f.write('%s\n' % image)
+            if hflip:
+                f.write('%s_flipped\n' % image)
 
-def write_annotations(images, label_dict):
+def write_annotations(images, label_dict, hflip=False):
     import xml.etree.cElementTree as ET
 
     annotations_dir = os.path.join(BASE_DIR, 'VOCify', 'Annotations')
@@ -108,14 +111,34 @@ def write_annotations(images, label_dict):
                 obj = ET.SubElement(annotation, 'object')
                 ET.SubElement(obj, 'name').text = label_dict[label].lower()
                 bndbox = ET.SubElement(obj, 'bndbox')
+                if hflip:
+                    u_xmin = 1 - xmax
+                    u_xmax = 1 - xmin
+                    u_ymin = 1 - ymax
+                    u_ymax = 1 - ymin
+                    xmin, xmax, ymin, ymax = u_xmin, u_xmax, u_ymin, u_ymax
                 ET.SubElement(bndbox, 'xmin').text = str(int(round(xmin * width)))
                 ET.SubElement(bndbox, 'xmax').text = str(int(round(xmax * width)))
                 ET.SubElement(bndbox, 'ymin').text = str(int(round(ymin * height)))
                 ET.SubElement(bndbox, 'ymax').text = str(int(round(ymax * height)))
 
-        annotation_path = os.path.join(annotations_dir, '%s.xml' % image)
+        if hflip:
+            annotation_path = os.path.join(annotations_dir, '%s_flipped.xml' % image)
+        else:
+            annotation_path = os.path.join(annotations_dir, '%s.xml' % image)
         tree = ET.ElementTree(annotation)
         tree.write(annotation_path)
+
+def hflip(images, label_dict):
+    images_dir = os.path.join(BASE_DIR, 'VOCify', 'JPEGImages')
+    for image in images:
+        image_filename = '%s.jpg' % image
+        new_image_filename = '%s_flipped.jpg' % image
+        im = Image.open(os.path.join(images_dir, image_filename))
+        im.transpose(Image.FLIP_LEFT_RIGHT)
+        im.save(os.path.join(images_dir, new_image_filename))
+    write_annotations(images, label_dict, hflip=True)
+
 
 if __name__ == '__main__':
     dataset = {}
@@ -134,5 +157,13 @@ if __name__ == '__main__':
     if trainval_enabled:
         print("Trainval enabled, writing trainval.txt...")
         write_image_sets('trainval', dataset['train'].keys() + dataset['validation'].keys())
+
+    if hflip_enabled:
+        for dataset_partition in ['train', 'validation']:
+            print('Flipping %s images...' % dataset_partition)
+            hflip(dataset[dataset_partition], label_dict)
+            write_image_sets(dataset_partition, dataset[dataset_partition].keys(), hflip=True)
+        if trainval_enabled:
+            write_image_sets('trainval', dataset['train'].keys() + dataset['validation'].keys(), hflip=True)
 
     print('Done!')
